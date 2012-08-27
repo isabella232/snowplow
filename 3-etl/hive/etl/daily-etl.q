@@ -1,14 +1,15 @@
-ADD JAR s3://psychicbazaar-snowplow-static/snowplow-log-deserializers-0.4.4.jar ;
+ADD JAR s3://psychicbazaar-snowplow-static/snowplow-log-deserializers-0.4.7.jar ;
 
 CREATE EXTERNAL TABLE `cloudfront_log_of_events`
 ROW FORMAT SERDE 'com.snowplowanalytics.snowplow.hadoop.hive.SnowPlowEventDeserializer'
 LOCATION '${CLOUDFRONTLOGS}' ;
 
-CREATE EXTERNAL TABLE `events` (
-tm string,
-txn_id string,
+CREATE EXTERNAL TABLE IF NOT EXISTS `events` (
+tm STRING,
+txn_id STRING,
+user_id STRING,
 user_ipaddress string,
-visit_id int,
+visit_id INT,
 page_url string,
 page_title string,
 page_referrer string,
@@ -16,7 +17,7 @@ mkt_source string,
 mkt_medium string,
 mkt_term string,
 mkt_content string,
-mkt_name string,
+mkt_campaign string,
 ev_category string,
 ev_action string,
 ev_label string,
@@ -36,18 +37,23 @@ os_manufacturer string,
 dvce_type string,
 dvce_ismobile boolean,
 dvce_screenwidth int,
-dvce_screenheight int	
-)
-PARTITIONED BY (dt STRING, user_id STRING)
-LOCATION '${EVENTSTABLE}' ;
+dvce_screenheight int)
+PARTITIONED BY (dt STRING)
+LOCATION 's3://psychicbazaar-snowplow-hive-tables/events/' ;
 
-set hive.exec.dynamic.partition=true ;
+ALTER TABLE events RECOVER PARTITIONS ;
+
+SET hive.exec.dynamic.partition=true ;
+SET hive.exec.dynamic.partition.mode=nonstrict ;
+
+/* Use a query like the one below to ETL more than one days worth of data into the optimised table */
 
 INSERT OVERWRITE TABLE `events`
-PARTITION (dt='${DATE}', user_id)
-SELECT 
+PARTITION(dt)
+SELECT
 tm,
 txn_id,
+user_id,
 user_ipaddress,
 visit_id,
 page_url,
@@ -57,7 +63,7 @@ mkt_source,
 mkt_medium,
 mkt_term,
 mkt_content,
-mkt_name,
+mkt_campaign,
 ev_category,
 ev_action,
 ev_label,
@@ -78,6 +84,51 @@ dvce_type,
 dvce_ismobile,
 dvce_screenwidth,
 dvce_screenheight,
-user_id
-FROM `cloudfront_log_of_events`
-WHERE dt='${DATE}' ;
+dt
+FROM 
+`cloudfront_log_of_events`
+WHERE dt IS NOT NULL
+AND dt>'2012-08-21'
+AND dt<'2012-08-27' ;
+
+/* Use a query like the one below to ETL more only one days worth of data into the optimised table */
+
+INSERT OVERWRITE TABLE `events`
+PARTITION(dt='2012-05-28')
+SELECT
+tm,
+txn_id,
+user_id,
+user_ipaddress,
+visit_id,
+page_url,
+page_title,
+page_referrer,
+mkt_source,
+mkt_medium,
+mkt_term,
+mkt_content,
+mkt_campaign,
+ev_category,
+ev_action,
+ev_label,
+ev_property,
+ev_value,
+br_name,
+br_family,
+br_version,
+br_type,
+br_renderengine,
+br_lang,
+br_features,
+br_cookies,
+os_name,
+os_family,
+os_manufacturer,
+dvce_type,
+dvce_ismobile,
+dvce_screenwidth,
+dvce_screenheight
+FROM 
+`extracted_logs`
+WHERE dt='2012-05-28';
