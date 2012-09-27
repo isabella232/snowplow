@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (c) 2012 SnowPlow Analytics Ltd. All rights reserved.
  *
  * This program is licensed to you under the Apache License Version 2.0,
@@ -38,7 +38,7 @@ import org.apache.hadoop.io.Writable;
 
 /**
  * SnowPlowEventDeserializer reads SnowPlow event and page view log data into Hive.
- * 
+ *
  * For documentation please see the introductory README.md in the project root.
  */
 public class SnowPlowEventDeserializer implements Deserializer {
@@ -62,6 +62,9 @@ public class SnowPlowEventDeserializer implements Deserializer {
   // For performance reasons we reuse the same object to deserialize all of our rows
   private static final SnowPlowEventStruct cachedStruct = new SnowPlowEventStruct();
 
+  private boolean skiplevel_line = false;
+  private boolean skiplevel_field = false;
+
   // -------------------------------------------------------------------------------------------------------------------
   // Helper for deserializing a single line
   // -------------------------------------------------------------------------------------------------------------------
@@ -74,11 +77,10 @@ public class SnowPlowEventDeserializer implements Deserializer {
    * @return The struct object from deserializing the text
    * @throws SerDeException if there is a problem deserializing the line, or reflection-inspecting the struct's contents
    */
-  public static Object deserializeLine(String line, Boolean verbose) throws SerDeException {
+  public static Object deserializeLine(String line, Boolean verbose, Configuration conf) throws SerDeException {
 
     // Prep the deserializer
     SnowPlowEventDeserializer serDe = new SnowPlowEventDeserializer();
-    Configuration conf = new Configuration();
     Properties tbl = new Properties();
     serDe.initialize(conf, tbl);
 
@@ -104,6 +106,11 @@ public class SnowPlowEventDeserializer implements Deserializer {
     return row;
   }
 
+  public static Object deserializeLine(String line, Boolean verbose) throws SerDeException {
+    return deserializeLine(line, verbose, new Configuration());
+  }
+
+
   // -------------------------------------------------------------------------------------------------------------------
   // Constructor & initializer
   // -------------------------------------------------------------------------------------------------------------------
@@ -125,6 +132,17 @@ public class SnowPlowEventDeserializer implements Deserializer {
   public void initialize(Configuration conf, Properties tbl) throws SerDeException {
 
     cachedObjectInspector = ObjectInspectorFactory.getReflectionObjectInspector(SnowPlowEventStruct.class, ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+
+    // Strategy for when a parsing problem occurs. Can be one of
+    //    "NONE" -> an exception is thrown
+    //    "FIELD -> the affected field is set to null
+    //    "LINE  -> the entire line is set to null (default)
+    if (conf.get("snowplow.serde.skiplevel") == "FIELD")
+      this.skiplevel_field = true;
+    else if (conf.get("snowplow.serde.skiplevel") != "NONE")
+      this.skiplevel_line = true;
+    cachedStruct.ignoreErrors(skiplevel_field);
+
     LOG.debug(this.getClass().getName() + " initialized");
   }
 
@@ -138,7 +156,7 @@ public class SnowPlowEventDeserializer implements Deserializer {
    * returned object. If the client wants to keep a copy of the object, the
    * client needs to clone the returned value by calling
    * ObjectInspectorUtils.getStandardObject().
-   * 
+   *
    * @param blob The Writable object containing a serialized object
    * @return A Java object representing the contents in the blob.
    * @throws SerDeException For any exception during initialization
@@ -163,7 +181,10 @@ public class SnowPlowEventDeserializer implements Deserializer {
     } catch (ClassCastException e) {
       throw new SerDeException(this.getClass().getName() + " expects Text or BytesWritable", e);
     } catch (Exception e) {
-      throw new SerDeException(e);
+      if (this.skiplevel_line)
+        return null;
+      else
+        throw new SerDeException(e);
     }
   }
 
@@ -184,7 +205,7 @@ public class SnowPlowEventDeserializer implements Deserializer {
    * Get the object inspector that can be used to navigate through the internal
    * structure of the Object returned from deserialize(...).
    *
-   * @return The ObjectInspector for this Deserializer 
+   * @return The ObjectInspector for this Deserializer
    * @throws SerDeException For any exception during initialization
    */
   @Override

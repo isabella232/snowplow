@@ -14,6 +14,7 @@ package com.snowplowanalytics.snowplow.hadoop.hive
 
 // Specs2
 import org.specs2.mutable.Specification
+import org.apache.hadoop.conf.Configuration;
 
 // Hive
 import org.apache.hadoop.hive.serde2.SerDeException;
@@ -23,10 +24,25 @@ class CorruptRowTest extends Specification {
   // Toggle if tests are failing and you want to inspect the struct contents
   val DEBUG = false;
 
+  val invalidline = "2012-05-21\t07:14:47\tFRA2\t3343\t83.4.209.35\tGET\td3t05xllj8hhgj.cloudfront.net";
+
+  val conf = new Configuration();
+  conf.set("snowplow.serde.skiplevel", "NONE");
+
   "An invalid or corrupted CloudFront row should throw an exception" >> {
-    Seq("", "NOT VALID", "2012-05-21\t07:14:47\tFRA2\t3343\t83.4.209.35\tGET\td3t05xllj8hhgj.cloudfront.net") foreach { invalid =>
+    Seq("", "NOT VALID", invalidline) foreach { invalid =>
       "invalid row \"%s\" throws a SerDeException".format(invalid) >> {
-        SnowPlowEventDeserializer.deserializeLine(invalid, DEBUG) must throwA[SerDeException](message = "Could not parse row: \"%s\"".format(invalid))
+        SnowPlowEventDeserializer.deserializeLine(invalid, DEBUG, conf) must throwA[SerDeException](message = "Could not parse row: \"%s\"".format(invalid))
+      }
+    }
+  }
+
+  val conf_line = new Configuration();
+  conf_line.set("snowplow.serde.skiplevel", "LINE");
+  "An invalid or corrupted CloudFront row should be null" >> {
+    Seq("", "NOT VALID", invalidline) foreach { invalid =>
+      "invalid row \"%s\" throws a SerDeException".format(invalid) >> {
+        SnowPlowEventDeserializer.deserializeLine(invalid, DEBUG, conf_line) must beNull
       }
     }
   }

@@ -18,12 +18,13 @@ import java.net.URLDecoder;
 import java.io.UnsupportedEncodingException;
 import java.util.List;
 import java.util.ArrayList;
-import java.nio.charset.Charset;
-import java.text.SimpleDateFormat;
-import java.text.ParseException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+
+// Commons Logging
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 // Hive
 import org.apache.hadoop.hive.serde2.SerDeException;
@@ -44,6 +45,13 @@ import org.apache.http.client.utils.URLEncodedUtils;
  * Constructor is empty because we do updates-in-place for performance reasons.
  */
 public class SnowPlowEventStruct {
+
+  // Setup logging - instantiated lazily
+  private static Log _LOG;
+
+  // if ignore_errors == true we attempt to recover from parsing errors
+  private boolean ignore_errors = false;
+
 
   // -------------------------------------------------------------------------------------------------------------------
   // Mutable properties for this Hive struct
@@ -157,6 +165,19 @@ public class SnowPlowEventStruct {
                                                    + w +  "[\\S]+"    // ResultType    / x-edge-result-type added 12 Sep 2012
                                                    + w +  "[\\S]+)?"  // X-Amz-Cf-Id   / x-edge-request-id  added 12 Sep 2012
                                          );
+
+  // Logging helper instantiated lazily
+  private static Log getLog() {
+    if (_LOG == null)
+      _LOG = LogFactory.getLog(SnowPlowEventStruct.class.getName());
+
+    return _LOG;
+  }
+
+  // whether to try and recover from errors at field level
+  public void ignoreErrors(boolean ignore_errors) {
+    this.ignore_errors = ignore_errors;
+  }
 
   // -------------------------------------------------------------------------------------------------------------------
   // Deserialization logic
@@ -297,7 +318,7 @@ public class SnowPlowEventStruct {
           try {
             final QuerystringFields field = QuerystringFields.valueOf(name.toUpperCase()); // Java pre-7 can't switch on a string, so hash the string
             switch (field) {
-
+  
               // Common fields
               case TID:
                 this.txn_id = value;
@@ -315,8 +336,11 @@ public class SnowPlowEventStruct {
                   this.dt = timestamp[0];
                   this.tm = timestamp[1];
                 } catch (Exception e) {
-                  // Return a null row on invalid data
-                  return null;
+                  if (ignore_errors) {
+                    getLog().warn("Could not parse TSTAMP field \"" + value + "\"");
+                  }
+                  else
+                    throw e;
                 }
               case LANG:
                 this.br_lang = value;
@@ -330,8 +354,11 @@ public class SnowPlowEventStruct {
                   this.dvce_screenwidth = Integer.parseInt(resolution[0]);
                   this.dvce_screenheight = Integer.parseInt(resolution[1]);
                 } catch (Exception e) {
-                  // Return a null row on invalid data
-                  return null;
+                  if (ignore_errors) {
+                    getLog().warn("Could not parse RES field \"" + value + "\"");
+                  }
+                  else
+                    throw e;
                 }
                 break;
               case REFR:
@@ -340,12 +367,12 @@ public class SnowPlowEventStruct {
               case URL:
                 qsUrl = pair.getValue(); // We might use this later for the page URL
                 break;
-
+  
               // Page-view only
               case PAGE:
                 this.page_title = decodeSafeString(value);
                 break;
-
+  
               // Event only
               case EV_CA:
                 this.ev_category = decodeSafeString(value);
@@ -362,7 +389,7 @@ public class SnowPlowEventStruct {
               case EV_VA:
                 this.ev_value = decodeSafeString(value);
                 break;
-
+  
               // Ecommerce
               case TR_ID:
                 this.tr_orderid = decodeSafeString(value);
@@ -407,10 +434,7 @@ public class SnowPlowEventStruct {
                 this.ti_quantity = decodeSafeString(value);
                 break;
             }
-          } catch (IllegalArgumentException iae) {
-            // Return a null row on invalid data
-            return null;
-          }
+          } catch (IllegalArgumentException iae) {} // Do nothing in the case of a non-attribution-related querystring param
         }
       }
 
@@ -424,41 +448,51 @@ public class SnowPlowEventStruct {
 
       // 5. Finally handle the marketing fields in the page_url
       // Re-use params to avoid creating another object
-      try {
-        params = URLEncodedUtils.parse(URI.create(this.page_url), "UTF-8");
+      if (page_url != null)
+      {
+        try {
+          params = URLEncodedUtils.parse(URI.create(this.page_url), "UTF-8");
 
-        // For performance, don't convert to a map, just loop through and match to our variables as we go
-        for (NameValuePair pair : params) {
+          // For performance, don't convert to a map, just loop through and match to our variables as we go
+          for (NameValuePair pair : params) {
 
-          final String name = pair.getName();
-          final String value = pair.getValue();
+            final String name = pair.getName();
+            final String value = pair.getValue();
 
-          try {
-            final MarketingFields field = MarketingFields.valueOf(name.toUpperCase()); // Java pre-7 can't switch on a string, so hash the string
+            try
+            {
+              final MarketingFields field = MarketingFields.valueOf(name.toUpperCase()); // Java pre-7 can't switch on a string, so hash the string
 
-            switch (field) {
-
-              // Marketing fields
-              case UTM_MEDIUM:
-                this.mkt_medium = decodeSafeString(value);
-                break;
-              case UTM_SOURCE:
-                this.mkt_source = decodeSafeString(value);
-                break;
-              case UTM_TERM:
-                this.mkt_term = decodeSafeString(value);
-                break;
-              case UTM_CONTENT:
-                this.mkt_content = decodeSafeString(value);
-                break;
-              case UTM_CAMPAIGN:
-                this.mkt_campaign = decodeSafeString(value);
-                break;
-            }
-          } catch (IllegalArgumentException iae) {} // Do nothing in the case of a non-attribution-related querystring param
+              switch (field) {
+                // Marketing fields
+                case UTM_MEDIUM:
+                  this.mkt_medium = decodeSafeString(value);
+                  break;
+                case UTM_SOURCE:
+                  this.mkt_source = decodeSafeString(value);
+                  break;
+                case UTM_TERM:
+                  this.mkt_term = decodeSafeString(value);
+                  break;
+                case UTM_CONTENT:
+                  this.mkt_content = decodeSafeString(value);
+                  break;
+                case UTM_CAMPAIGN:
+                  this.mkt_campaign = decodeSafeString(value);
+                  break;
+              }
+            } catch (IllegalArgumentException iae) {} // Do nothing in the case of a non-attribution-related querystring param
+          }
+        } catch (IllegalArgumentException iae) {
+          if (ignore_errors) {
+            getLog().warn("Could not URLdecode string: \"" + page_url + "\"");
+            return null;
+          }
+          else {
+            throw iae;
+          }
         }
-      } catch (IllegalArgumentException iae) {} // Do nothing in the case of a malformed querystring (IAE thrown by URLEncodedUtils.parse())
-
+      }
     } catch (Exception e) {
       throw new SerDeException("Could not parse row: \"" + row + "\"", e);
     }
@@ -490,13 +524,39 @@ public class SnowPlowEventStruct {
    * @return The decoded String
    * @throws UnsupportedEncodingException if the Character Encoding is not supported
    */
-  static String decodeSafeString(String s) throws UnsupportedEncodingException {
+  String decodeSafeString(String s) throws UnsupportedEncodingException {
 
-    if (s == null) return null;
-    String decoded = URLDecoder.decode(s, cfEncoding);
-    if (decoded == null) return null;
+    if (s == null)
+      return null;
 
-    return decoded.replaceAll("(\\r|\\n)", "");
+    try {
+      s = URLDecoder.decode(cleanUrlString(s), cfEncoding);
+      return s.replaceAll("(\\r|\\n)", "");
+    }
+    catch(IllegalArgumentException e) {
+      if (ignore_errors) {
+        getLog().warn("Could not URLdecode string: \"" + s + "\"");
+        return null;
+      }
+      else {
+        throw e;
+      }
+    }
+  }
+
+  /**
+   * Cleans a string to try and make it parsable by URLDecoder.decode.
+   *
+   * @param s The String to clean
+   * @return The cleaned string
+   */
+  static String cleanUrlString(String s)
+  {
+    // '%' is at to the end of some URLs in Cloudfront logs. Perhaps a Cloudfront bug?
+    if (s.endsWith("%"))
+      s = s.substring(0, s.length()-1);
+
+    return s;
   }
 
   /**
@@ -507,9 +567,16 @@ public class SnowPlowEventStruct {
    * @return True for "1", false for "0"
    * @throws IllegalArgumentException if the string is not "1" or "0"
    */
-  static boolean stringToBoolean(String s) throws IllegalArgumentException {
+  boolean stringToBoolean(String s) throws IllegalArgumentException {
     if (s.equals("1")) return true;
     if (s.equals("0")) return false;
-    throw new IllegalArgumentException("Could not convert \"" + s + "\" to boolean, only 1 or 0.");
+
+    String err = "Could not convert \"" + s + "\" to boolean, only 1 or 0.";
+    if (ignore_errors) {
+      getLog().warn(err);
+      return false;
+    }
+    else
+      throw new IllegalArgumentException(err);
   }
 }
