@@ -227,6 +227,17 @@ SnowPlow.Tracker = function Tracker(argmap) {
 	}
 
 	/*
+	 * Extract hostname from URL
+	 */
+	function getHostName(url) {
+		// scheme : // [username [: password] @] hostame [: port] [/ [path] [? query] [# fragment]]
+		var e = new RegExp('^(?:(?:https?|ftp):)/*(?:[^@]+@)?([^:/#]+)'),
+			matches = e.exec(url);
+
+		return matches ? matches[1] : url;
+	}
+
+	/*
 	 * Resolve relative reference
 	 *
 	 * Note: not as described in rfc3986 section 5.2
