@@ -190,6 +190,7 @@ public class SnowPlowEventStruct {
                                                    + ow + "[\\S]+"    // XHostHeader   / x-host-header      added 21 Oct 2013
                                                    + w +  "[\\S]+"    // CsProtocol    / cs-protocol        added 21 Oct 2013
                                                    + w +  "[\\S]+)?"  // CsBytes       / cs-bytes           added 21 Oct 2013
+                                                   + ow + "[\\S]+)?"  // TimeTaken     / time-taken         added 29 Apr 2014
                                          );
 
   // Logging helper instantiated lazily
