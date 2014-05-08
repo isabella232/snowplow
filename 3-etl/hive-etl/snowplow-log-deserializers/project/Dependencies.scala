@@ -19,9 +19,9 @@ object Dependencies {
   )
 
   object V {
-    val hadoop    = "0.20.2"    
-    val hive      = "0.8.1"
-    val http      = "4.1.1"
+    val hadoop    = "1.2.1"    
+    val hive      = "0.11.0"
+    val http      = "4.3"
     val logging   = "1.1.1"
     val specs2    = "1.12.1"
     val scalaUtil = "0.1.0"

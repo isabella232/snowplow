@@ -45,6 +45,7 @@ object BuildSettings {
   import AssemblyKeys._
   lazy val sbtAssemblySettings = assemblySettings ++ Seq(
     assembleArtifact in packageScala := false,
+    test in assembly := {},
     jarName in assembly <<= (name, version) { (name, version) => name + "-" + version + ".jar" },
     mergeStrategy in assembly <<= (mergeStrategy in assembly) {
       (old) => {
